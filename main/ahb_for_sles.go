@@ -15,7 +15,7 @@ package main
 
 import (
   "fmt"
-	"os"
+  "os"
   "os/exec"
 
 	"github.com/Azure/azure-extension-platform/vmextension"
