@@ -42,7 +42,7 @@ type AHB_Info struct {
 
 
 var enableCallbackFunc vmextension.EnableCallbackFunc = func(ext *vmextension.VMExtension) (string, error) {
-	ahb_info := AHB_Info{
+  ahb_info := AHB_Info{
     PublicCloudService: "public_cloud",
     RegisterCloudGuestPath: "/usr/sbin/registercloudguest",
     RegionSrvMinVer: "9.3.1",
