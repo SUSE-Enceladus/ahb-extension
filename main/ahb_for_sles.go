@@ -27,7 +27,7 @@ const (
 	extensionVersion = "0.0.0.1"
 )
 
-type AHB_Info struct {
+type AHBInfo struct {
   PublicCloudService             string
   RegisterCloudGuestPath         string
   RegionSrvMinVer                string
@@ -42,7 +42,7 @@ type AHB_Info struct {
 
 
 var enableCallbackFunc vmextension.EnableCallbackFunc = func(ext *vmextension.VMExtension) (string, error) {
-  ahb_info := AHB_Info{
+  ahbInfo := AHBInfo{
     PublicCloudService: "public_cloud",
     RegisterCloudGuestPath: "/usr/sbin/registercloudguest",
     RegionSrvMinVer: "9.3.1",
@@ -56,14 +56,14 @@ var enableCallbackFunc vmextension.EnableCallbackFunc = func(ext *vmextension.VM
   }
   //1. double check that the regionsrv-enabler-azure.service file exists
   status := "success"
-  _, err := os.Stat(ahb_info.AddonPath)
+  _, err := os.Stat(ahbInfo.AddonPath)
   if err != nil {
     return "failure", err
   }
   //2. enable the service
-  _, err = exec.Command("systemctl", "enable", ahb_info.RegionSrvEnablerService).Output()
+  _, err = exec.Command("systemctl", "enable", ahbInfo.RegionSrvEnablerService).Output()
   if err != nil {
-    fmt.Println("Error when enabling repo", ahb_info.RegionSrvEnablerService)
+    fmt.Println("Error when enabling repo", ahbInfo.RegionSrvEnablerService)
     status = "failure"
   }
 
