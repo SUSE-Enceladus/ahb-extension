@@ -1,0 +1,13 @@
+[{​​​
+  "version": 0.1,
+  "handlerManifest": {​​​
+    "installCommand": "bin/ahb-extension-sle install",
+    "uninstallCommand": "bin/ahb-extension-sle uninstall",
+    "updateCommand": "bin/ahb-extension-sle update",
+    "enableCommand": "bin/ahb-extension-sle enable",
+    "disableCommand": "bin/ahb-extension-sle disable",
+    "rebootAfterInstall": false,
+    "reportHeartbeat": false,
+    "updateMode": "UpdateWithInstall"
+  }​​​
+}​​​]
