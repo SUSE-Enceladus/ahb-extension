@@ -36,7 +36,7 @@ type AHBInfo struct {
   PublicCloudService             string
   RegisterCloudGuestPath         string
   RegionSrvMinVer                string
-  RegionSrvEnablerService        string
+  RegionSrvEnablerTimer          string
   RegionSrv                      string
   RegionSrvAddOn                 string
   AddonPath                      string
@@ -274,7 +274,7 @@ func getAhbInfo() (AHBInfo) {
     PublicCloudService: "public_cloud",
     RegisterCloudGuestPath: "/usr/sbin/registercloudguest",
     RegionSrvMinVer: "9.3.1",
-    RegionSrvEnablerService: "regionsrv-enabler-azure.service",
+    RegionSrvEnablerTimer: "regionsrv-enabler-azure.service",
     RegionSrv: "cloud-regionsrv-client",
     RegionSrvAddOn: "cloud-regionsrv-client-addon-azure",
     AddonPath: "/usrb/sbin/regionsrv-enabler-azure",
@@ -327,10 +327,10 @@ var enableCallbackFunc vmextension.EnableCallbackFunc = func(ext *vmextension.VM
   if err != nil {
     return "failure", err
   }
-  //2. enable the service
-  _, err = exec.Command("systemctl", "enable", ahbInfo.RegionSrvEnablerService).Output()
+  //2. enable the timer
+  _, err = exec.Command("systemctl", "enable", ahbInfo.RegionSrvEnablerTimer).Output()
   if err != nil {
-    fmt.Println("Error when enabling repo", ahbInfo.RegionSrvEnablerService)
+    fmt.Println("Error when enabling timer", ahbInfo.RegionSrvEnablerTimer)
     status = "failure"
   }
 
