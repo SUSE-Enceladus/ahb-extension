@@ -39,6 +39,9 @@ type AHBInfo struct {
   RegionSrvEnablerTimer          string
   RegionSrv                      string
   RegionSrvAddOn                 string
+  RegionSrvPlugin                string
+  RegionSrvConfig                string
+  RegionSrvCerts                 string
   AddonPath                      string
   RepoAlias                      string
   ModName                        string
@@ -198,7 +201,12 @@ func _addRepo(repoAlias string, repoUrl string) error {
 }
 
 func _installPackages (ahbInfo AHBInfo) error {
-  packages := fmt.Sprintf("%s>=%s %s", ahbInfo.RegionSrv, ahbInfo.RegionSrvMinVer, ahbInfo.RegionSrvAddOn)
+  packages := fmt.Sprintf(
+    "%s>=%s %s %s %s %s %s", ahbInfo.RegionSrv,
+    ahbInfo.RegionSrvMinVer, ahbInfo.RegionSrvAddOn,
+    ahbInfo.RegionSrvPlugin, ahbInfo.RegionSrvConfig,
+    ahbInfo.RegionSrvCerts,
+  )
   _, err := exec.Command("zypper",  "--non-interactive", "in", "--replacefiles", "--no-recommends", packages).Output()
   if err != nil {
     _, repoError := exec.Command("zypper", "removerepo", ahbInfo.RepoAlias).Output()
@@ -277,6 +285,9 @@ func getAhbInfo() (AHBInfo) {
     RegionSrvEnablerTimer: "regionsrv-enabler-azure.service",
     RegionSrv: "cloud-regionsrv-client",
     RegionSrvAddOn: "cloud-regionsrv-client-addon-azure",
+    RegionSrvPlugin: "cloud-regionsrv-client-plugin-azure",
+    RegionSrvConfig: "regionServiceClientConfigAzure",
+    RegionSrvCerts: "regionServiceCertsAzure",
     AddonPath: "/usrb/sbin/regionsrv-enabler-azure",
     RepoAlias: "sle-ahb-packages",
     ModName: "sle-module-public-cloud",
