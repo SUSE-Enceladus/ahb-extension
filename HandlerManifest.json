@@ -1,5 +1,5 @@
 [{​​​
-  "version": 0.1,
+  "version": 1.0,
   "handlerManifest": {​​​
     "installCommand": "bin/ahb-extension-sle install",
     "uninstallCommand": "bin/ahb-extension-sle uninstall",
