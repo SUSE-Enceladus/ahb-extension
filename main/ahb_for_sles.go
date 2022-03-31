@@ -222,7 +222,13 @@ func _installPackages(ahbInfo AHBInfo) error {
 }
 
 func _handlePackageInstall(ahbInfo AHBInfo) error {
-	if _isRegistered() {
+	isRegistered, err := _isRegistered()
+
+	if err != nil {
+		//throw error
+	}
+
+	if isRegistered {
 		hasPubCloudMod, distro, arch := _hasPubCloudMod(ahbInfo.PublicCloudService)
 		if !hasPubCloudMod {
 			// add repo
