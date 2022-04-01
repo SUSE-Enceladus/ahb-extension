@@ -94,13 +94,15 @@ func _isRegistered() (bool, error) {
 	return len(services) > 0, err
 }
 
-func _hasPubCloudMod(pubCloudService string) (bool, string, error) {
+func _hasPubCloudMod(pubCloudService string) (bool, string, string, error) {
 	services, err := filepath.Glob("/etc/zypp/services.d/*.service")
 	if err != nil {
-		return false, "", err
+		fmt.Println(err)
+		return false, "", "", err
 	}
 	hasPubCloud := false
-	version := ""
+	distro := ""
+  	arch := ""
 
 	for _, service := range services {
 		serviceFile, _ := parseCfg(service)
@@ -131,7 +133,7 @@ func _hasPubCloudMod(pubCloudService string) (bool, string, error) {
 			break
 		}
 	}
-	return hasPubCloud, version, nil
+	return hasPubCloud, distro, arch, nil
 }
 func _isNewerVersion(versions []string) bool {
 	installed := strings.Split(versions[0], ".")
@@ -225,11 +227,14 @@ func _handlePackageInstall(ahbInfo AHBInfo) error {
 	isRegistered, err := _isRegistered()
 
 	if err != nil {
-		//throw error
+		return err
 	}
 
 	if isRegistered {
-		hasPubCloudMod, distro, arch := _hasPubCloudMod(ahbInfo.PublicCloudService)
+		hasPubCloudMod, distro, arch, errGlob := _hasPubCloudMod(ahbInfo.PublicCloudService)
+		if errGlob != nil {
+			return errGlob
+		}
 		if !hasPubCloudMod {
 			// add repo
 			repoUrl := fmt.Sprintf(ahbInfo.RepoUrl, distro, arch)
