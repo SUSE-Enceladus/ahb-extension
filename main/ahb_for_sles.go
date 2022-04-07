@@ -304,7 +304,7 @@ func getAhbInfo() AHBInfo {
 		RegionSrvPlugin:        "cloud-regionsrv-client-plugin-azure",
 		RegionSrvConfig:        "regionServiceClientConfigAzure",
 		RegionSrvCerts:         "regionServiceCertsAzure",
-		AddonPath:              "/usrb/sbin/regionsrv-enabler-azure",
+		AddonPath:              "/usr/sbin/regionsrv-enabler-azure",
 		RepoAlias:              "sle-ahb-packages",
 		ModName:                "sle-module-public-cloud",
 		RepoUrl:                "https://updates.suse.com/SUSE/Updates/SLE-Module-Public-Cloud-Unrestricted/%s/%s/update",
