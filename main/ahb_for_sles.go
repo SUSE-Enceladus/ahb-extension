@@ -102,7 +102,7 @@ func _hasPubCloudMod(pubCloudService string) (bool, string, string, error) {
 	}
 	hasPubCloud := false
 	distro := ""
-  	arch := ""
+	arch := ""
 
 	for _, service := range services {
 		serviceFile, _ := parseCfg(service)
@@ -125,6 +125,12 @@ func _hasPubCloudMod(pubCloudService string) (bool, string, string, error) {
 					}
 				}
 				if distro != "" {
+					if strings.Contains(value["repo_1"], distro+"-SP") {
+						// get SP if any
+						indexSp := strings.LastIndex(value["repo_1"], distro+"-SP")
+						sp := value["repo_1"][(indexSp + 5):(indexSp + 6)]
+						distro = distro + "." + sp
+					}
 					break
 				}
 			}
@@ -205,13 +211,10 @@ func _addRepo(repoAlias string, repoUrl string) error {
 }
 
 func _installPackages(ahbInfo AHBInfo) error {
-	packages := fmt.Sprintf(
-		"%s>=%s %s %s %s %s %s", ahbInfo.RegionSrv,
-		ahbInfo.RegionSrvMinVer, ahbInfo.RegionSrvAddOn,
-		ahbInfo.RegionSrvPlugin, ahbInfo.RegionSrvConfig,
-		ahbInfo.RegionSrvCerts,
-	)
-	_, err := exec.Command("zypper", "--non-interactive", "in", "--replacefiles", "--no-recommends", packages).Output()
+	regionSrv := fmt.Sprintf("%s>=%s", ahbInfo.RegionSrv, ahbInfo.RegionSrvMinVer)
+	_, err := exec.Command("zypper", "--non-interactive", "in", "--replacefiles",
+		"--no-recommends", regionSrv, ahbInfo.RegionSrvAddOn, ahbInfo.RegionSrvPlugin,
+		ahbInfo.RegionSrvConfig, ahbInfo.RegionSrvCerts).Output()
 	if err != nil {
 		_, repoError := exec.Command("zypper", "removerepo", ahbInfo.RepoAlias).Output()
 		if repoError != nil {
@@ -295,16 +298,16 @@ func getAhbInfo() AHBInfo {
 		PublicCloudService:     "public_cloud",
 		RegisterCloudGuestPath: "/usr/sbin/registercloudguest",
 		RegionSrvMinVer:        "9.3.1",
-		RegionSrvEnablerTimer:  "regionsrv-enabler-azure.service",
+		RegionSrvEnablerTimer:  "regionsrv-enabler-azure.timer",
 		RegionSrv:              "cloud-regionsrv-client",
 		RegionSrvAddOn:         "cloud-regionsrv-client-addon-azure",
 		RegionSrvPlugin:        "cloud-regionsrv-client-plugin-azure",
 		RegionSrvConfig:        "regionServiceClientConfigAzure",
 		RegionSrvCerts:         "regionServiceCertsAzure",
-		AddonPath:              "/usrb/sbin/regionsrv-enabler-azure",
+		AddonPath:              "/usr/sbin/regionsrv-enabler-azure",
 		RepoAlias:              "sle-ahb-packages",
 		ModName:                "sle-module-public-cloud",
-		RepoUrl:                "https://updates.suse.com/SUSE/Updates/SLE-Module-Public-Cloud-Unrestricted/%s/x86_64/update",
+		RepoUrl:                "https://updates.suse.com/SUSE/Updates/SLE-Module-Public-Cloud-Unrestricted/%s/%s/update",
 	}
 }
 
@@ -312,7 +315,7 @@ var installCallbackFunc vmextension.CallbackFunc = func(ext *vmextension.VMExten
 	ahbInfo := getAhbInfo()
 	// 1. Check if the system has the public cloud module
 	_, registercloudError := os.Stat(ahbInfo.RegisterCloudGuestPath)
-	_, addonError := os.Stat(ahbInfo.RegisterCloudGuestPath)
+	_, addonError := os.Stat(ahbInfo.AddonPath)
 	if registercloudError == nil {
 		if !_checkVersion(ahbInfo) {
 			// need to install the right version
