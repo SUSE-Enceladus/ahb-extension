@@ -361,18 +361,15 @@ var enableCallbackFunc vmextension.EnableCallbackFunc = func(ext *vmextension.VM
 	if err != nil {
 		return "failure", err
 	}
-	//2. enable the timer
-	_, err = exec.Command("systemctl", "enable", ahbInfo.RegionSrvEnablerTimer).Output()
-	if err != nil {
-		fmt.Println("Error when enabling timer", ahbInfo.RegionSrvEnablerTimer)
-		status = "failure"
+	//2. enable and start the timer
+	systemdActions := []string{"enable", "start"}
+	for _, systemdAction := range systemdActions {
+		_, err = exec.Command("systemctl", systemdAction, ahbInfo.RegionSrvEnablerTimer).Output()
+		if err != nil {
+			fmt.Println("Error when trying to", systemdAction, " timer", ahbInfo.RegionSrvEnablerTimer)
+			status = "failure"
+		}
 	}
-	_, err = exec.Command("systemctl", "start", ahbInfo.RegionSrvEnablerTimer).Output()
-	if err != nil {
-		fmt.Println("Error when starting timer", ahbInfo.RegionSrvEnablerTimer)
-		status = "failure"
-	}
-
 	fmt.Println(status, "when enabling the extension")
 	return status, err
 }
