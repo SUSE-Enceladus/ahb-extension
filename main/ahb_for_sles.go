@@ -367,7 +367,13 @@ var enableCallbackFunc vmextension.EnableCallbackFunc = func(ext *vmextension.VM
 		fmt.Println("Error when enabling timer", ahbInfo.RegionSrvEnablerTimer)
 		status = "failure"
 	}
+	_, err = exec.Command("systemctl", "start", ahbInfo.RegionSrvEnablerTimer).Output()
+	if err != nil {
+		fmt.Println("Error when starting timer", ahbInfo.RegionSrvEnablerTimer)
+		status = "failure"
+	}
 
+	fmt.Println(status, "when enabling the extension")
 	return status, err
 }
 
@@ -396,7 +402,7 @@ func main() {
 }
 
 func getExtensionAndRun() error {
-	initilizationInfo, err := getInitializationInfoFuncToCall(extensionName, extensionVersion, true, enableCallbackFunc)
+	initilizationInfo, err := getInitializationInfoFuncToCall(extensionName, extensionVersion, false, enableCallbackFunc)
 	if err != nil {
 		return err
 	}
