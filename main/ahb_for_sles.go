@@ -328,18 +328,21 @@ var installCallbackFunc vmextension.CallbackFunc = func(ext *vmextension.VMExten
 			// need to install the right version
 			handlePackageError := _handlePackageInstall(ahbInfo)
 			if handlePackageError != nil {
+				fmt.Println("Extension enable failed. Reason=" + handlePackageError.Error())
 				return handlePackageError
 			}
 		} else {
 			if addonError == nil {
 				// both packages are in the system and
 				// the version is correct
+				fmt.Println("Extension install succeeded")
 				return nil
 			} else {
 				// missing addon package
 				// add addon
 				handlePackageError := _handlePackageInstall(ahbInfo)
 				if handlePackageError != nil {
+					fmt.Println("Extension enable failed. Reason=" + handlePackageError.Error())
 					return handlePackageError
 				}
 			}
@@ -347,9 +350,12 @@ var installCallbackFunc vmextension.CallbackFunc = func(ext *vmextension.VMExten
 	} else {
 		handlePackageError := _handlePackageInstall(ahbInfo)
 		if handlePackageError != nil {
+			fmt.Println("Extension enable failed. Reason=" + handlePackageError.Error())
 			return handlePackageError
 		}
 	}
+
+	fmt.Println("Extension install succeeded")
 	return nil
 }
 
@@ -359,6 +365,7 @@ var enableCallbackFunc vmextension.EnableCallbackFunc = func(ext *vmextension.VM
 	status := "success"
 	_, err := os.Stat(ahbInfo.AddonPath)
 	if err != nil {
+		fmt.Println("Extension enable failed. Reason=" + err.Error())
 		return "failure", err
 	}
 	//2. enable and start the timer
