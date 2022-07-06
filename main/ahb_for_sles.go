@@ -22,7 +22,10 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -30,6 +33,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-extension-platform/pkg/exithelper"
 	"github.com/Azure/azure-extension-platform/vmextension"
@@ -37,8 +41,9 @@ import (
 )
 
 const (
-	extensionName    = "AHBForSLES"
-	extensionVersion = "0.0.0.1"
+	extensionName                 = "AHBForSLES"
+	extensionVersion              = "0.0.0.1"
+	DEFAULT_SHELL_COMMAND_TIMEOUT = 120 //seconds
 )
 
 type AHBInfo struct {
@@ -95,7 +100,7 @@ func parseCfg(filename string) (map[string]map[string]string, error) {
 func _isRegistered() (bool, error) {
 	services, err := filepath.Glob("/etc/zypp/services.d/*.service")
 	if err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(os.Stderr, err)
 		return false, err
 	}
 	return len(services) > 0, err
@@ -104,7 +109,7 @@ func _isRegistered() (bool, error) {
 func _hasPubCloudMod(pubCloudService string) (bool, string, string, error) {
 	services, err := filepath.Glob("/etc/zypp/services.d/*.service")
 	if err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(os.Stderr, err)
 		return false, "", "", err
 	}
 	hasPubCloud := false
@@ -189,7 +194,7 @@ func _checkVersion(ahbInfo AHBInfo) bool {
 	}
 
 	var info ZypperOutput
-	xmlData, err := exec.Command("zypper", "-x", "search", "-is", ahbInfo.RegionSrv).Output()
+	xmlData, err := RunShellCommand(0, "zypper", "-x", "search", "-is", ahbInfo.RegionSrv)
 	err = xml.Unmarshal([]byte(xmlData), &info)
 	if err != nil {
 		fmt.Printf("error: %v", err)
@@ -210,24 +215,24 @@ func _checkVersion(ahbInfo AHBInfo) bool {
 }
 
 func _addRepo(repoAlias string, repoUrl string) error {
-	_, err := exec.Command("zypper", "addrepo", repoUrl, repoAlias).Output()
+	_, err := RunShellCommand(0, "zypper", "addrepo", repoUrl, repoAlias)
 	if err != nil {
-		fmt.Println("Error while adding a repo with URL:", repoUrl)
+		fmt.Fprintln(os.Stderr, "Error while adding a repo with URL:", repoUrl)
 	}
 	return err
 }
 
 func _installPackages(ahbInfo AHBInfo) error {
 	regionSrv := fmt.Sprintf("%s>=%s", ahbInfo.RegionSrv, ahbInfo.RegionSrvMinVer)
-	_, err := exec.Command("zypper", "--non-interactive", "in", "--replacefiles",
+	_, err := RunShellCommand(0, "zypper", "--non-interactive", "in", "--replacefiles",
 		"--no-recommends", regionSrv, ahbInfo.RegionSrvAddOn, ahbInfo.RegionSrvPlugin,
-		ahbInfo.RegionSrvConfig, ahbInfo.RegionSrvCerts).Output()
+		ahbInfo.RegionSrvConfig, ahbInfo.RegionSrvCerts)
 	if err != nil {
-		_, repoError := exec.Command("zypper", "removerepo", ahbInfo.RepoAlias).Output()
+		_, repoError := RunShellCommand(0, "zypper", "removerepo", ahbInfo.RepoAlias)
 		if repoError != nil {
-			fmt.Println("Error when removing repo", ahbInfo.RepoAlias)
+			fmt.Fprintln(os.Stderr, "Error when removing repo", ahbInfo.RepoAlias)
 		}
-		fmt.Println("Error installing", ahbInfo.RegionSrv, "or", ahbInfo.RegionSrvAddOn)
+		fmt.Fprintln(os.Stderr, "Error installing", ahbInfo.RegionSrv, "or", ahbInfo.RegionSrvAddOn)
 		return err
 	}
 	return nil
@@ -249,7 +254,7 @@ func _handlePackageInstall(ahbInfo AHBInfo) error {
 			// add repo
 			repoUrl := fmt.Sprintf(ahbInfo.RepoUrl, distro, arch)
 			triplet := ahbInfo.ModName + "/" + distro + "/" + arch
-			_, addRepoError := exec.Command("SUSEConnect", "-p", triplet).Output()
+			_, addRepoError := RunShellCommand(0, "SUSEConnect", "-p", triplet)
 			if addRepoError != nil {
 				// adding module with SUSEConnect failed,
 				// trying adding repo with zypper
@@ -264,17 +269,17 @@ func _handlePackageInstall(ahbInfo AHBInfo) error {
 			return installError
 		}
 		// packages installed, remove repo
-		_, err := exec.Command("zypper", "removerepo", ahbInfo.RepoAlias).Output()
+		_, err := RunShellCommand(0, "zypper", "removerepo", ahbInfo.RepoAlias)
 		if err != nil {
-			fmt.Println("Error when removing repo", ahbInfo.RepoAlias)
+			fmt.Fprintln(os.Stderr, "Error when removing repo", ahbInfo.RepoAlias)
 		}
 	} else {
 		fmt.Println(
 			"System is not registered. Adding repository and installing packages.",
 		)
-		output, _ := exec.Command("uname", "-i").Output()
+		output, _ := RunShellCommand(0, "uname", "-i")
 		arch := strings.Trim(string(output), "\n\t\r")
-		output, _ = exec.Command("cat", "/etc/os-release", "|", "grep", "VERSION_ID").Output()
+		output, _ = RunShellCommand(0, "cat", "/etc/os-release", "|", "grep", "VERSION_ID")
 		distro := ""
 		if strings.Contains(string(output), "15") {
 			distro = "15"
@@ -292,9 +297,9 @@ func _handlePackageInstall(ahbInfo AHBInfo) error {
 			return installError
 		}
 		// packages installed, remove repo
-		_, err := exec.Command("zypper", "removerepo", ahbInfo.RepoAlias).Output()
+		_, err := RunShellCommand(0, "zypper", "removerepo", ahbInfo.RepoAlias)
 		if err != nil {
-			fmt.Println("Error when removing repo", ahbInfo.RepoAlias)
+			fmt.Fprintln(os.Stderr, "Error when removing repo", ahbInfo.RepoAlias)
 		}
 	}
 	return nil
@@ -328,7 +333,7 @@ var installCallbackFunc vmextension.CallbackFunc = func(ext *vmextension.VMExten
 			// need to install the right version
 			handlePackageError := _handlePackageInstall(ahbInfo)
 			if handlePackageError != nil {
-				fmt.Println("Extension enable failed. Reason=" + handlePackageError.Error())
+				fmt.Fprintln(os.Stderr, "Extension enable failed. Reason="+handlePackageError.Error())
 				return handlePackageError
 			}
 		} else {
@@ -342,7 +347,7 @@ var installCallbackFunc vmextension.CallbackFunc = func(ext *vmextension.VMExten
 				// add addon
 				handlePackageError := _handlePackageInstall(ahbInfo)
 				if handlePackageError != nil {
-					fmt.Println("Extension enable failed. Reason=" + handlePackageError.Error())
+					fmt.Fprintln(os.Stderr, "Extension enable failed. Reason="+handlePackageError.Error())
 					return handlePackageError
 				}
 			}
@@ -350,7 +355,7 @@ var installCallbackFunc vmextension.CallbackFunc = func(ext *vmextension.VMExten
 	} else {
 		handlePackageError := _handlePackageInstall(ahbInfo)
 		if handlePackageError != nil {
-			fmt.Println("Extension enable failed. Reason=" + handlePackageError.Error())
+			fmt.Fprintln(os.Stderr, "Extension enable failed. Reason="+handlePackageError.Error())
 			return handlePackageError
 		}
 	}
@@ -365,15 +370,15 @@ var enableCallbackFunc vmextension.EnableCallbackFunc = func(ext *vmextension.VM
 	status := "success"
 	_, err := os.Stat(ahbInfo.AddonPath)
 	if err != nil {
-		fmt.Println("Extension enable failed. Reason=" + err.Error())
+		fmt.Fprintln(os.Stderr, "Extension enable failed. Reason="+err.Error())
 		return "failure", err
 	}
 	//2. enable and start the timer
 	systemdActions := []string{"enable", "start"}
 	for _, systemdAction := range systemdActions {
-		_, err = exec.Command("systemctl", systemdAction, ahbInfo.RegionSrvEnablerTimer).Output()
+		_, err = RunShellCommand(0, "systemctl", systemdAction, ahbInfo.RegionSrvEnablerTimer)
 		if err != nil {
-			fmt.Println("Error when trying to", systemdAction, " timer", ahbInfo.RegionSrvEnablerTimer)
+			fmt.Fprintln(os.Stderr, "Error when trying to", systemdAction, " timer", ahbInfo.RegionSrvEnablerTimer)
 			status = "failure"
 		}
 	}
@@ -420,4 +425,34 @@ func getExtensionAndRun() error {
 	}
 	vmExt.Do()
 	return nil
+}
+
+//Function to run a shell command through golang
+func RunShellCommand(timeout time.Duration, name string, args ...string) (string, error) {
+
+	if timeout == 0 {
+		timeout = DEFAULT_SHELL_COMMAND_TIMEOUT
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
+	var outb, errb bytes.Buffer
+	cmd.Stdout = &outb
+	cmd.Stderr = &errb
+	err := cmd.Run()
+
+	if ctx.Err() == context.DeadlineExceeded {
+		err = errors.New("Timeout running shell command: " + name + " " + strings.Join(args, " "))
+		fmt.Fprintln(os.Stderr, err)
+		return "", err
+	}
+
+	if err != nil {
+		err = errors.New("Error running shell command: " + name + " " + strings.Join(args, " ") + ". Error: " + errb.String())
+		fmt.Fprintln(os.Stderr, err)
+		return "", err
+	}
+
+	return outb.String(), nil
 }
