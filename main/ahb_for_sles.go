@@ -279,7 +279,8 @@ func _handlePackageInstall(ahbInfo AHBInfo) error {
 		)
 		output, _ := RunShellCommand(0, "uname", "-i")
 		arch := strings.Trim(string(output), "\n\t\r")
-		output, _ = RunShellCommand(0, "cat", "/etc/os-release", "|", "grep", "VERSION_ID")
+		// Handle PIPE commands i.e. commandA [params] | commandB [value] [| moreCommands ...]
+		output, _ = RunShellCommand(0, "bash", "-c", "cat /etc/os-release | grep VERSION_ID")
 		distro := ""
 		if strings.Contains(string(output), "15") {
 			distro = "15"
