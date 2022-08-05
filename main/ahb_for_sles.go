@@ -50,7 +50,7 @@ const (
 	INSTALL_EVENT            = "Install"
 	ENABLE_EVENT             = "Enable"
 	DISABLE_EVENT            = "Disable"
-	UNINSTALL_EVENT          = "UNINSTALL"
+	UNINSTALL_EVENT          = "Uninstall"
 	UPDATE_EVENT             = "Update"
 	OPERATION_START_MSG      = "AHBForSLES extension %s started..."
 	OPERATION_FAILURE_MSG    = "AHBForSLES extension %s finished. Result=Failure; Reason=%v"
