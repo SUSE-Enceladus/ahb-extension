@@ -46,6 +46,17 @@ const (
 	DEFAULT_SHELL_COMMAND_TIMEOUT = 120 //seconds
 )
 
+const (
+	INSTALL_EVENT            = "Install"
+	ENABLE_EVENT             = "Enable"
+	DISABLE_EVENT            = "Disable"
+	UNINSTALL_EVENT          = "UNINSTALL"
+	UPDATE_EVENT             = "Update"
+	OPERATION_START_MSG      = "AHBForSLES extension %s started..."
+	OPERATION_FAILURE_MSG    = "AHBForSLES extension %s finished. Result=Failure; Reason=%v"
+	OPERATION_COMPLETION_MSG = "AHBForSLES extension %s completed"
+)
+
 type AHBInfo struct {
 	PublicCloudService     string
 	RegisterCloudGuestPath string
@@ -324,6 +335,10 @@ func getAhbInfo() AHBInfo {
 }
 
 var installCallbackFunc vmextension.CallbackFunc = func(ext *vmextension.VMExtension) error {
+
+	ext.ExtensionEvents.LogInformationalEvent(
+		INSTALL_EVENT,
+		fmt.Sprintf(OPERATION_START_MSG, INSTALL_EVENT))
 	ahbInfo := getAhbInfo()
 	// 1. Check if the system has the public cloud module
 	_, registercloudError := os.Stat(ahbInfo.RegisterCloudGuestPath)
@@ -334,12 +349,19 @@ var installCallbackFunc vmextension.CallbackFunc = func(ext *vmextension.VMExten
 			handlePackageError := _handlePackageInstall(ahbInfo)
 			if handlePackageError != nil {
 				fmt.Fprintln(os.Stderr, "Extension enable failed. Reason="+handlePackageError.Error())
+				ext.ExtensionEvents.LogErrorEvent(
+					INSTALL_EVENT,
+					fmt.Sprintf(OPERATION_FAILURE_MSG, INSTALL_EVENT, handlePackageError.Error()))
+
 				return handlePackageError
 			}
 		} else {
 			if addonError == nil {
 				// both packages are in the system and
 				// the version is correct
+				ext.ExtensionEvents.LogInformationalEvent(
+					INSTALL_EVENT,
+					fmt.Sprintf(OPERATION_COMPLETION_MSG, INSTALL_EVENT))
 				fmt.Println("Extension install succeeded")
 				return nil
 			} else {
@@ -348,6 +370,9 @@ var installCallbackFunc vmextension.CallbackFunc = func(ext *vmextension.VMExten
 				handlePackageError := _handlePackageInstall(ahbInfo)
 				if handlePackageError != nil {
 					fmt.Fprintln(os.Stderr, "Extension enable failed. Reason="+handlePackageError.Error())
+					ext.ExtensionEvents.LogErrorEvent(
+						INSTALL_EVENT,
+						fmt.Sprintf(OPERATION_FAILURE_MSG, INSTALL_EVENT, handlePackageError.Error()))
 					return handlePackageError
 				}
 			}
@@ -356,21 +381,35 @@ var installCallbackFunc vmextension.CallbackFunc = func(ext *vmextension.VMExten
 		handlePackageError := _handlePackageInstall(ahbInfo)
 		if handlePackageError != nil {
 			fmt.Fprintln(os.Stderr, "Extension enable failed. Reason="+handlePackageError.Error())
+			ext.ExtensionEvents.LogErrorEvent(
+				INSTALL_EVENT,
+				fmt.Sprintf(OPERATION_FAILURE_MSG, INSTALL_EVENT, handlePackageError.Error()))
+
 			return handlePackageError
 		}
 	}
 
+	ext.ExtensionEvents.LogInformationalEvent(
+		INSTALL_EVENT,
+		fmt.Sprintf(OPERATION_COMPLETION_MSG, INSTALL_EVENT))
 	fmt.Println("Extension install succeeded")
 	return nil
 }
 
 var enableCallbackFunc vmextension.EnableCallbackFunc = func(ext *vmextension.VMExtension) (string, error) {
+	ext.ExtensionEvents.LogInformationalEvent(
+		ENABLE_EVENT,
+		fmt.Sprintf(OPERATION_START_MSG, ENABLE_EVENT))
+
 	ahbInfo := getAhbInfo()
 	//1. double check that the regionsrv-enabler-azure.service file exists
 	status := "success"
 	_, err := os.Stat(ahbInfo.AddonPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Extension enable failed. Reason="+err.Error())
+		ext.ExtensionEvents.LogErrorEvent(
+			ENABLE_EVENT,
+			fmt.Sprintf(OPERATION_FAILURE_MSG, ENABLE_EVENT, err.Error()))
 		return "failure", err
 	}
 	//2. enable and start the timer
@@ -379,10 +418,18 @@ var enableCallbackFunc vmextension.EnableCallbackFunc = func(ext *vmextension.VM
 		_, err = RunShellCommand(0, "systemctl", systemdAction, ahbInfo.RegionSrvEnablerTimer)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Error when trying to", systemdAction, " timer", ahbInfo.RegionSrvEnablerTimer)
+			ext.ExtensionEvents.LogErrorEvent(
+				ENABLE_EVENT,
+				fmt.Sprintf(OPERATION_FAILURE_MSG, ENABLE_EVENT, err.Error()))
 			status = "failure"
 		}
 	}
 	fmt.Println(status, "when enabling the extension")
+	if status == "success" {
+		ext.ExtensionEvents.LogInformationalEvent(
+			ENABLE_EVENT,
+			fmt.Sprintf(OPERATION_COMPLETION_MSG, ENABLE_EVENT))
+	}
 	return status, err
 }
 
@@ -421,13 +468,17 @@ func getExtensionAndRun() error {
 	initilizationInfo.UpdateCallback = updateCallbackFunc
 	vmExt, err := getVMExtensionFuncToCall(initilizationInfo)
 	if err != nil {
+		fmt.Fprintln(os.Stderr, "Extension initialization failed. Reason="+err.Error())
+		vmExt.ExtensionEvents.LogErrorEvent(
+			"Initialization",
+			fmt.Sprintf("AHBForSLES extension initialization finished. Result=Failure; Reason=%v", err.Error()))
 		return err
 	}
 	vmExt.Do()
 	return nil
 }
 
-//Function to run a shell command through golang
+// Function to run a shell command through golang
 func RunShellCommand(timeout time.Duration, name string, args ...string) (string, error) {
 
 	if timeout == 0 {
