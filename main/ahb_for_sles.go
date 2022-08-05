@@ -54,7 +54,7 @@ const (
 	UPDATE_EVENT             = "Update"
 	OPERATION_START_MSG      = "AHBForSLES extension %s started..."
 	OPERATION_FAILURE_MSG    = "AHBForSLES extension %s finished. Result=Failure; Reason=%v"
-	OPERATION_COMPLETION_MSG = "AHBForSLES extension %s completed"
+	OPERATION_COMPLETION_MSG = "AHBForSLES extension %s completed. Result=Success"
 )
 
 type AHBInfo struct {
