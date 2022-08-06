@@ -2,6 +2,8 @@ github.com/Azure/azure-extension-platform v0.0.0-20220301222126-2656bbc0a09f h1:
 github.com/Azure/azure-extension-platform v0.0.0-20220301222126-2656bbc0a09f/go.mod h1:1hEkO8M1zN/SQpdFOTDDMTNfeE1Q2tCHmEXXiHrWTgo=
 github.com/Azure/azure-extension-platform v0.0.0-20220727161245-67e58652b30d h1:afAVUzTccJtQfP+cWsTYlAADrNZAMRQgKzOJ9ba/6kE=
 github.com/Azure/azure-extension-platform v0.0.0-20220727161245-67e58652b30d/go.mod h1:1hEkO8M1zN/SQpdFOTDDMTNfeE1Q2tCHmEXXiHrWTgo=
+github.com/Azure/azure-extension-platform v0.0.0-20220805171336-0dc957a76b67 h1:Of1ijxH2Mxlq1l5vZOhBmqxDhlf7iAiaGkyMjoN634A=
+github.com/Azure/azure-extension-platform v0.0.0-20220805171336-0dc957a76b67/go.mod h1:1hEkO8M1zN/SQpdFOTDDMTNfeE1Q2tCHmEXXiHrWTgo=
 github.com/davecgh/go-spew v1.1.0 h1:ZDRjVQ15GmhC3fiQ8ni8+OwkZQO4DARzQgrnXU1Liz8=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/go-kit/kit v0.12.0 h1:e4o3o3IsBfAKQh5Qbbiqyfu97Ku7jrO/JbohvztANh4=

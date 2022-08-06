@@ -3,7 +3,7 @@ module github.com/SUSE-Enceladus/ahb-extension
 go 1.17
 
 require (
-	github.com/Azure/azure-extension-platform v0.0.0-20220727161245-67e58652b30d
+	github.com/Azure/azure-extension-platform v0.0.0-20220805171336-0dc957a76b67
 	github.com/go-kit/kit v0.12.0
 	github.com/stretchr/testify v1.7.0
 )
