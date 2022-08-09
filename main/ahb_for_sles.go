@@ -124,18 +124,14 @@ func _getSUSEConnectStatus() (bool, bool, error) {
 			}
 			extensionsList := strings.Split(extensionsOutput, "\n")
 			for _, extension := range extensionsList {
-				if strings.Contains(extension, "Deactivate with") || strings.Contains(extension, "public-cloud") {
+				if strings.Contains(extension, "Deactivate with") {
 					// activate whatever it was active AND
 					// Public Cloud module
 					start := strings.Index(string(extension), "SUSEConnect")
 					if start != -1 {
 						command := string(extension)[start:len(extension)]
 						commandList := strings.Split(command, " ")
-						if strings.Contains(extension, "Deactivate with") {
-							_, err = RunShellCommand(0, commandList[0], commandList[2], commandList[3])
-						} else {
-							_, err = RunShellCommand(0, commandList[0], commandList[1], commandList[2])
-						}
+						_, err = RunShellCommand(0, commandList[0], commandList[2], commandList[3])
 						if err != nil {
 							fmt.Fprintln(os.Stderr, err)
 							return true, true, err
