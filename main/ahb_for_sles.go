@@ -164,52 +164,22 @@ func _getSUSEConnectStatus() (bool, bool, error) {
 	return false, false, nil
 }
 
-func _hasPubCloudMod(pubCloudService string) (bool, string, string, error) {
+func _hasPubCloudMod(pubCloudService string) (bool, error) {
 	services, err := filepath.Glob("/etc/zypp/services.d/*.service")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		return false, "", "", err
+		return false, err
 	}
-	hasPubCloud := false
-	distro := ""
-	arch := ""
 
 	for _, service := range services {
 		serviceFile, _ := parseCfg(service)
 		for _, value := range serviceFile {
 			if strings.Contains(strings.ToLower(value["url"]), pubCloudService) {
-				hasPubCloud = true
-			} else {
-				if distro == "" {
-					if strings.Contains(value["repo_1"], "15-") {
-						distro = "15"
-					}
-					if strings.Contains(value["repo_1"], "12-") {
-						distro = "12"
-					}
-					if strings.Contains(value["repo_1"], "_x86_64") {
-						arch = "x86_64"
-					}
-					if strings.Contains(value["repo_1"], "_aarch64") {
-						arch = "aarch64"
-					}
-				}
-				if distro != "" {
-					if distro == "15" && strings.Contains(value["repo_1"], distro+"-SP") {
-						// get SP if any
-						indexSp := strings.LastIndex(value["repo_1"], distro+"-SP")
-						sp := value["repo_1"][(indexSp + 5):(indexSp + 6)]
-						distro = distro + "." + sp
-					}
-					break
-				}
+				return true, nil
 			}
 		}
-		if distro != "" {
-			break
-		}
 	}
-	return hasPubCloud, distro, arch, nil
+	return false, nil
 }
 func _isNewerVersion(versions []string) bool {
 	installed := strings.Split(versions[0], ".")
@@ -296,18 +266,27 @@ func _installPackages(ahbInfo AHBInfo) error {
 	return nil
 }
 
-func _getUnrestrictedRepoUrl(ahbRepoUrl string) string {
+func _getVersionAndArch(module bool) (string, string) {
 	output, _ := RunShellCommand(0, "uname", "-i")
 	arch := strings.Trim(string(output), "\n\t\r")
-	output, _ = RunShellCommand(0, "bash", "-c", "cat /etc/os-release | grep VERSION_ID")
-	distro := ""
+	catCommand := "cat /etc/os-release | grep VERSION_ID | tr -d VERSION_ID= | tr -d '\"'"
+	output, _ = RunShellCommand(0, "bash", "-c", catCommand)
+	version := ""
 	if strings.Contains(string(output), "15") {
-		distro = "15"
+		if module {
+			version = output
+		} else {
+			version = "15"
+		}
 	}
 	if strings.Contains(string(output), "12") {
-		distro = "12"
+		version = "12"
 	}
-	return fmt.Sprintf(ahbRepoUrl, distro, arch)
+	return version, arch
+}
+func _getUnrestrictedRepoUrl(ahbRepoUrl string) string {
+	version, arch := _getVersionAndArch(false)
+	return fmt.Sprintf(ahbRepoUrl, version, arch)
 }
 
 func _installUnrestrictedRepoPackages(ahbInfo AHBInfo, repoUrl string) error {
@@ -368,18 +347,18 @@ func _handlePackageInstall(ahbInfo AHBInfo) error {
 	}
 
 	if isRegistered && hasActiveSubscription {
-		hasPubCloudMod, distro, arch, errGlob := _hasPubCloudMod(ahbInfo.PublicCloudService)
+		hasPubCloudMod, errGlob := _hasPubCloudMod(ahbInfo.PublicCloudService)
 		if errGlob != nil {
 			return errGlob
 		}
 		if !hasPubCloudMod {
-			// add repo
-			repoUrl := fmt.Sprintf(ahbInfo.RepoUrl, distro, arch)
-			triplet := ahbInfo.ModName + "/" + distro + "/" + arch
+			version, arch := _getVersionAndArch(true)
+			triplet := ahbInfo.ModName + "/" + version + "/" + arch
 			_, addRepoError := RunShellCommand(0, "SUSEConnect", "-p", triplet)
 			if addRepoError != nil {
 				// adding module with SUSEConnect failed,
 				// trying adding repo with zypper
+				repoUrl := fmt.Sprintf(ahbInfo.RepoUrl, version, arch)
 				addRepoError = _addRepo(ahbInfo.RepoAlias, repoUrl)
 				if addRepoError != nil {
 					return addRepoError
