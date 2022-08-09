@@ -52,6 +52,7 @@ const (
 	DISABLE_EVENT            = "Disable"
 	UNINSTALL_EVENT          = "Uninstall"
 	UPDATE_EVENT             = "Update"
+	INITIALIZATION_EVENT     = "Initialization"
 	OPERATION_START_MSG      = "AHBForSLES extension %s started..."
 	OPERATION_FAILURE_MSG    = "AHBForSLES extension %s finished. Result=Failure; Reason=%v"
 	OPERATION_COMPLETION_MSG = "AHBForSLES extension %s completed. Result=Success"
@@ -470,8 +471,8 @@ func getExtensionAndRun() error {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Extension initialization failed. Reason="+err.Error())
 		vmExt.ExtensionEvents.LogErrorEvent(
-			"Initialization",
-			fmt.Sprintf("AHBForSLES extension initialization finished. Result=Failure; Reason=%v", err.Error()))
+			INITIALIZATION_EVENT,
+			fmt.Sprintf(OPERATION_FAILURE_MSG, INITIALIZATION_EVENT, err.Error()))
 		return err
 	}
 	vmExt.Do()
