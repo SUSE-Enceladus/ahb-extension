@@ -325,8 +325,7 @@ func _reactivateServices() error {
 	extensionsList := strings.Split(extensionsOutput, "\n")
 	for _, extension := range extensionsList {
 		if strings.Contains(extension, "Deactivate with") {
-			// activate whatever it was active AND
-			// Public Cloud module
+			// activate whatever it was active
 			start := strings.Index(string(extension), "SUSEConnect")
 			if start != -1 {
 				command := string(extension)[start:len(extension)]
