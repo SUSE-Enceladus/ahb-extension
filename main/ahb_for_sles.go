@@ -46,6 +46,17 @@ const (
 	extensionVersion              = "0.0.0.2"
 	DEFAULT_SHELL_COMMAND_TIMEOUT = 120 //seconds
 )
+const (
+	INSTALL_EVENT            = "Install"
+	ENABLE_EVENT             = "Enable"
+	DISABLE_EVENT            = "Disable"
+	UNINSTALL_EVENT          = "Uninstall"
+	UPDATE_EVENT             = "Update"
+	INITIALIZATION_EVENT     = "Initialization"
+	OPERATION_START_MSG      = "AHBForSLES extension %s started..."
+	OPERATION_FAILURE_MSG    = "AHBForSLES extension %s finished. Result=Failure; Reason=%v"
+	OPERATION_COMPLETION_MSG = "AHBForSLES extension %s completed. Result=Success"
+)
 
 type AHBInfo struct {
 	PublicCloudService     string
@@ -239,12 +250,16 @@ func _getUnrestrictedRepoUrl(ahbRepoUrl string) string {
 	return fmt.Sprintf(ahbRepoUrl, version, arch)
 }
 
-func _installUnrestrictedRepoPackages(ahbInfo AHBInfo, repoUrl string) error {
+func _installUnrestrictedRepoPackages(ahbInfo AHBInfo, repoUrl string, ext *vmextension.VMExtension) error {
 	repoError := _addRepo(ahbInfo.RepoAlias, repoUrl)
 	if repoError == nil {
 		// install cloud-regionsrv-client and addon packages
 		return _installPackages(ahbInfo)
 	}
+	ext.ExtensionEvents.LogErrorEvent(
+		INSTALL_EVENT,
+		fmt.Sprintf(OPERATION_FAILURE_MSG, "Add unrestricted repo", repoError.Error()))
+
 	return repoError
 }
 
@@ -332,7 +347,7 @@ func _activatePubCloudModule(ahbInfo AHBInfo) (bool, error) {
 	return false, nil
 }
 
-func _handlePackageInstall(ahbInfo AHBInfo) error {
+func _handlePackageInstall(ahbInfo AHBInfo, ext *vmextension.VMExtension) error {
 	isRegistered, hasActiveSubscription, err := _getSUSEConnectStatus()
 
 	if err != nil {
@@ -366,6 +381,9 @@ func _handlePackageInstall(ahbInfo AHBInfo) error {
 		}
 		// install cloud-regionsrv-client and addon packages
 		if installError := _installPackages(ahbInfo); installError != nil {
+			ext.ExtensionEvents.LogErrorEvent(
+				INSTALL_EVENT,
+				fmt.Sprintf(OPERATION_FAILURE_MSG, "Install packages", installError.Error()))
 			return installError
 		}
 		if removeRepo {
@@ -385,7 +403,7 @@ func _handlePackageInstall(ahbInfo AHBInfo) error {
 		}
 		fmt.Println("Adding repository and installing packages")
 		repoUrl := _getUnrestrictedRepoUrl(ahbInfo.RepoUrl)
-		err := _installUnrestrictedRepoPackages(ahbInfo, repoUrl)
+		err := _installUnrestrictedRepoPackages(ahbInfo, repoUrl, ext)
 		if err != nil {
 			fmt.Println("Error installing packages from Unrestricted repository")
 			_, repoError := RunShellCommand(0, "zypper", "removerepo", ahbInfo.RepoAlias)
@@ -431,7 +449,7 @@ var installCallbackFunc vmextension.CallbackFunc = func(ext *vmextension.VMExten
 	if registercloudError == nil {
 		if !_checkVersion(ahbInfo) {
 			// need to install the right version
-			handlePackageError := _handlePackageInstall(ahbInfo)
+			handlePackageError := _handlePackageInstall(ahbInfo, ext)
 			if handlePackageError != nil {
 				fmt.Fprintln(os.Stderr, "Extension install failed. Reason="+handlePackageError.Error())
 				return handlePackageError
@@ -445,7 +463,7 @@ var installCallbackFunc vmextension.CallbackFunc = func(ext *vmextension.VMExten
 			} else {
 				// missing addon package
 				// add addon
-				handlePackageError := _handlePackageInstall(ahbInfo)
+				handlePackageError := _handlePackageInstall(ahbInfo, ext)
 				if handlePackageError != nil {
 					fmt.Fprintln(os.Stderr, "Extension install failed. Reason="+handlePackageError.Error())
 					return handlePackageError
@@ -453,7 +471,7 @@ var installCallbackFunc vmextension.CallbackFunc = func(ext *vmextension.VMExten
 			}
 		}
 	} else {
-		handlePackageError := _handlePackageInstall(ahbInfo)
+		handlePackageError := _handlePackageInstall(ahbInfo, ext)
 		if handlePackageError != nil {
 			fmt.Fprintln(os.Stderr, "Extension install failed. Reason="+handlePackageError.Error())
 			return handlePackageError
