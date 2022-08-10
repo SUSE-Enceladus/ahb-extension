@@ -109,53 +109,7 @@ func _getSUSEConnectStatus() (bool, bool, error) {
 	subscriptionStatus := fmt.Sprintf("%v", suseConnectStatus[0]["subscription_status"])
 	status := fmt.Sprintf("%v", suseConnectStatus[0]["status"])
 	if strings.ToLower(status) == "registered" && strings.ToLower(subscriptionStatus) == "active" {
-		// system is registered with an active subscription
-		// check if services are present
-		services, err := filepath.Glob("/etc/zypp/services.d/*.service")
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return true, true, err
-		}
-		if len(services) == 0 {
-			extensionsOutput, err := RunShellCommand(0, "SUSEConnect", "--list-extensions")
-			if err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				return true, true, err
-			}
-			extensionsList := strings.Split(extensionsOutput, "\n")
-			for _, extension := range extensionsList {
-				if strings.Contains(extension, "Deactivate with") {
-					// activate whatever it was active AND
-					// Public Cloud module
-					start := strings.Index(string(extension), "SUSEConnect")
-					if start != -1 {
-						command := string(extension)[start:len(extension)]
-						commandList := strings.Split(command, " ")
-						_, err = RunShellCommand(0, commandList[0], commandList[2], commandList[3])
-						if err != nil {
-							fmt.Fprintln(os.Stderr, err)
-							return true, true, err
-						}
-					}
-				}
-			}
-			return true, true, err
-		}
-		// check if repos are present
-		repos, err := filepath.Glob("/etc/zypp/repos.d/*.repo")
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return true, true, err
-		}
-		if len(repos) == 0 {
-			_, err := RunShellCommand(0, "zypper", "refresh-services", "-f")
-			return true, true, err
-		}
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return true, true, err
-		}
-		return true, true, err
+		return true, true, nil
 	} else {
 		if strings.ToLower(status) == "registered" {
 			return true, false, nil
@@ -256,10 +210,6 @@ func _installPackages(ahbInfo AHBInfo) error {
 		"--no-recommends", regionSrv, ahbInfo.RegionSrvAddOn, ahbInfo.RegionSrvPlugin,
 		ahbInfo.RegionSrvConfig, ahbInfo.RegionSrvCerts)
 	if err != nil {
-		_, repoError := RunShellCommand(0, "zypper", "removerepo", ahbInfo.RepoAlias)
-		if repoError != nil {
-			fmt.Fprintln(os.Stderr, "Error when removing repo", ahbInfo.RepoAlias)
-		}
 		fmt.Fprintln(os.Stderr, "Error installing", ahbInfo.RegionSrv, "or", ahbInfo.RegionSrvAddOn)
 		return err
 	}
@@ -290,21 +240,12 @@ func _getUnrestrictedRepoUrl(ahbRepoUrl string) string {
 }
 
 func _installUnrestrictedRepoPackages(ahbInfo AHBInfo, repoUrl string) error {
-	addRepoError := _addRepo(ahbInfo.RepoAlias, repoUrl)
-	if addRepoError != nil {
-		return addRepoError
+	repoError := _addRepo(ahbInfo.RepoAlias, repoUrl)
+	if repoError == nil {
+		// install cloud-regionsrv-client and addon packages
+		return _installPackages(ahbInfo)
 	}
-	// install cloud-regionsrv-client and addon packages
-	if installError := _installPackages(ahbInfo); installError != nil {
-		return installError
-	}
-	// packages installed, remove repo
-	_, err := RunShellCommand(0, "zypper", "removerepo", ahbInfo.RepoAlias)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Error when removing repo", ahbInfo.RepoAlias)
-		return err
-	}
-	return nil
+	return repoError
 }
 
 func _removeRepositories() error {
@@ -339,6 +280,58 @@ func _removeRepositories() error {
 	return nil
 }
 
+func _hasServices() (bool, error) {
+	services, err := filepath.Glob("/etc/zypp/services.d/*.service")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return false, err
+	}
+	return len(services) > 0, nil
+}
+
+func _reactivateServices() error {
+	extensionsOutput, err := RunShellCommand(0, "SUSEConnect", "--list-extensions")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return err
+	}
+	extensionsList := strings.Split(extensionsOutput, "\n")
+	for _, extension := range extensionsList {
+		if strings.Contains(extension, "Deactivate with") {
+			// activate whatever it was active AND
+			// Public Cloud module
+			start := strings.Index(string(extension), "SUSEConnect")
+			if start != -1 {
+				command := string(extension)[start:len(extension)]
+				commandList := strings.Split(command, " ")
+				_, err = RunShellCommand(0, commandList[0], commandList[2], commandList[3])
+				if err != nil {
+					fmt.Fprintln(os.Stderr, err)
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func _activatePubCloudModule(ahbInfo AHBInfo) (bool, error) {
+	version, arch := _getVersionAndArch(true)
+	triplet := ahbInfo.ModName + "/" + version + "/" + arch
+	_, addModuleError := RunShellCommand(0, "SUSEConnect", "-p", triplet)
+	if addModuleError != nil {
+		// adding module with SUSEConnect failed,
+		// trying adding repo with zypper
+		repoUrl := fmt.Sprintf(ahbInfo.RepoUrl, version, arch)
+		addRepoError := _addRepo(ahbInfo.RepoAlias, repoUrl)
+		if addRepoError != nil {
+			return false, addRepoError
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
 func _handlePackageInstall(ahbInfo AHBInfo) error {
 	isRegistered, hasActiveSubscription, err := _getSUSEConnectStatus()
 
@@ -347,32 +340,40 @@ func _handlePackageInstall(ahbInfo AHBInfo) error {
 	}
 
 	if isRegistered && hasActiveSubscription {
+		// system is registered with an active subscription
+		// check if services are present
+		hasServices, err := _hasServices()
+		if err != nil {
+			return err
+		}
+
+		if !hasServices {
+			err = _reactivateServices()
+			if err != nil {
+				return err
+			}
+		}
 		hasPubCloudMod, errGlob := _hasPubCloudMod(ahbInfo.PublicCloudService)
 		if errGlob != nil {
 			return errGlob
 		}
+		removeRepo := false
 		if !hasPubCloudMod {
-			version, arch := _getVersionAndArch(true)
-			triplet := ahbInfo.ModName + "/" + version + "/" + arch
-			_, addRepoError := RunShellCommand(0, "SUSEConnect", "-p", triplet)
-			if addRepoError != nil {
-				// adding module with SUSEConnect failed,
-				// trying adding repo with zypper
-				repoUrl := fmt.Sprintf(ahbInfo.RepoUrl, version, arch)
-				addRepoError = _addRepo(ahbInfo.RepoAlias, repoUrl)
-				if addRepoError != nil {
-					return addRepoError
-				}
+			removeRepo, err = _activatePubCloudModule(ahbInfo)
+			if err != nil {
+				return err
 			}
 		}
 		// install cloud-regionsrv-client and addon packages
 		if installError := _installPackages(ahbInfo); installError != nil {
 			return installError
 		}
-		// packages installed, remove repo
-		_, err := RunShellCommand(0, "zypper", "removerepo", ahbInfo.RepoAlias)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "Error when removing repo", ahbInfo.RepoAlias)
+		if removeRepo {
+			// packages installed, remove repo
+			_, err = RunShellCommand(0, "zypper", "removerepo", ahbInfo.RepoAlias)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "Error when removing repo", ahbInfo.RepoAlias)
+			}
 		}
 	} else {
 		if isRegistered && !hasActiveSubscription {
@@ -387,8 +388,19 @@ func _handlePackageInstall(ahbInfo AHBInfo) error {
 		err := _installUnrestrictedRepoPackages(ahbInfo, repoUrl)
 		if err != nil {
 			fmt.Println("Error installing packages from Unrestricted repository")
+			_, repoError := RunShellCommand(0, "zypper", "removerepo", ahbInfo.RepoAlias)
+			if repoError != nil {
+				fmt.Fprintln(os.Stderr, "Error when removing repo", ahbInfo.RepoAlias)
+				return repoError
+			}
 			return err
 		}
+		// packages installed, remove repo
+		_, err = RunShellCommand(0, "zypper", "removerepo", ahbInfo.RepoAlias)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Error when removing repo", ahbInfo.RepoAlias)
+		}
+
 	}
 	return nil
 }
