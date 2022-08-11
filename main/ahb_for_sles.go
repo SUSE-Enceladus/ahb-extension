@@ -43,7 +43,7 @@ import (
 
 const (
 	extensionName                 = "AHBForSLES"
-	extensionVersion              = "0.0.0.2"
+	extensionVersion              = "0.0.0.3"
 	DEFAULT_SHELL_COMMAND_TIMEOUT = 120 //seconds
 )
 const (
