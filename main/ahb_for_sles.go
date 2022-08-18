@@ -124,7 +124,7 @@ func parseCfg(filename string) (map[string]map[string]string, error) {
 func _getSUSEConnectStatus() (bool, bool, error) {
 	commandOutput, error := RunShellCommand(0, "SUSEConnect", "-s")
 	if error != nil {
-		fmt.Println(error)
+		fmt.Fprintln(os.Stderr, error)
 		return false, false, error
 	}
 	var suseConnectStatus []map[string]interface{}
@@ -278,20 +278,19 @@ func _installUnrestrictedRepoPackages(ahbInfo AHBInfo, repoUrl string, ext *vmex
 func _removeRepositories() error {
 	repos, err := filepath.Glob("/etc/zypp/repos.d/*.repo")
 	if err != nil {
-		fmt.Println("Error getting repositories from '/etc/zypp/repos.d'")
+		fmt.Fprintln(os.Stderr, "Error getting repositories from '/etc/zypp/repos.d'")
 		return err
 	}
 	for _, repo := range repos {
 		repoFile, err := os.Open(repo)
 
 		if err != nil {
-			fmt.Println(err)
+			fmt.Fprintln(os.Stderr, err)
 			return err
 		}
 		scanner := bufio.NewScanner(repoFile)
 
 		for scanner.Scan() {
-			fmt.Println(scanner.Text())
 			if strings.Contains(scanner.Text(), "baseurl") && (strings.Contains(scanner.Text(), "plugin:/susecloud") ||
 				strings.Contains(scanner.Text(), "plugin:susecloud")) {
 				fmt.Println("Removing repo ", repo)
@@ -300,7 +299,7 @@ func _removeRepositories() error {
 		}
 
 		if err := scanner.Err(); err != nil {
-			fmt.Println(err)
+			fmt.Fprintln(os.Stderr, err)
 			return err
 		}
 	}
@@ -416,7 +415,7 @@ func _handlePackageInstall(ahbInfo AHBInfo, ext *vmextension.VMExtension) error 
 		repoUrl := _getUnrestrictedRepoUrl(ahbInfo.RepoUrl)
 		err := _installUnrestrictedRepoPackages(ahbInfo, repoUrl, ext)
 		if err != nil {
-			fmt.Println("Error installing packages from Unrestricted repository")
+			fmt.Fprintln(os.Stderr, "Error installing packages from Unrestricted repository")
 			_, repoError := RunShellCommand(0, "zypper", "removerepo", ahbInfo.RepoAlias)
 			if repoError != nil {
 				fmt.Fprintln(os.Stderr, "Error when removing repo", ahbInfo.RepoAlias)
