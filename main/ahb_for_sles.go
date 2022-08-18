@@ -24,6 +24,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -42,10 +43,9 @@ import (
 
 const (
 	extensionName                 = "AHBForSLES"
-	extensionVersion              = "0.0.0.2"
+	extensionVersion              = "0.0.0.3"
 	DEFAULT_SHELL_COMMAND_TIMEOUT = 120 //seconds
 )
-
 const (
 	INSTALL_EVENT            = "Install"
 	ENABLE_EVENT             = "Enable"
@@ -109,61 +109,42 @@ func parseCfg(filename string) (map[string]map[string]string, error) {
 	return ini, nil
 }
 
-func _isRegistered() (bool, error) {
+func _getSUSEConnectStatus() (bool, bool, error) {
+	commandOutput, error := RunShellCommand(0, "SUSEConnect", "-s")
+	if error != nil {
+		fmt.Fprintln(os.Stderr, error)
+		return false, false, error
+	}
+	var suseConnectStatus []map[string]interface{}
+	json.Unmarshal([]byte(commandOutput), &suseConnectStatus)
+	subscriptionStatus := fmt.Sprintf("%v", suseConnectStatus[0]["subscription_status"])
+	status := fmt.Sprintf("%v", suseConnectStatus[0]["status"])
+	if strings.ToLower(status) == "registered" && strings.ToLower(subscriptionStatus) == "active" {
+		return true, true, nil
+	} else {
+		if strings.ToLower(status) == "registered" {
+			return true, false, nil
+		}
+	}
+	return false, false, nil
+}
+
+func _hasPubCloudMod(pubCloudService string) (bool, error) {
 	services, err := filepath.Glob("/etc/zypp/services.d/*.service")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return false, err
 	}
-	return len(services) > 0, err
-}
-
-func _hasPubCloudMod(pubCloudService string) (bool, string, string, error) {
-	services, err := filepath.Glob("/etc/zypp/services.d/*.service")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return false, "", "", err
-	}
-	hasPubCloud := false
-	distro := ""
-	arch := ""
 
 	for _, service := range services {
 		serviceFile, _ := parseCfg(service)
 		for _, value := range serviceFile {
 			if strings.Contains(strings.ToLower(value["url"]), pubCloudService) {
-				hasPubCloud = true
-			} else {
-				if distro == "" {
-					if strings.Contains(value["repo_1"], "15-") {
-						distro = "15"
-					}
-					if strings.Contains(value["repo_1"], "12-") {
-						distro = "12"
-					}
-					if strings.Contains(value["repo_1"], "_x86_64") {
-						arch = "x86_64"
-					}
-					if strings.Contains(value["repo_1"], "_aarch64") {
-						arch = "aarch64"
-					}
-				}
-				if distro != "" {
-					if strings.Contains(value["repo_1"], distro+"-SP") {
-						// get SP if any
-						indexSp := strings.LastIndex(value["repo_1"], distro+"-SP")
-						sp := value["repo_1"][(indexSp + 5):(indexSp + 6)]
-						distro = distro + "." + sp
-					}
-					break
-				}
+				return true, nil
 			}
 		}
-		if distro != "" {
-			break
-		}
 	}
-	return hasPubCloud, distro, arch, nil
+	return false, nil
 }
 func _isNewerVersion(versions []string) bool {
 	installed := strings.Split(versions[0], ".")
@@ -240,79 +221,202 @@ func _installPackages(ahbInfo AHBInfo) error {
 		"--no-recommends", regionSrv, ahbInfo.RegionSrvAddOn, ahbInfo.RegionSrvPlugin,
 		ahbInfo.RegionSrvConfig, ahbInfo.RegionSrvCerts)
 	if err != nil {
-		_, repoError := RunShellCommand(0, "zypper", "removerepo", ahbInfo.RepoAlias)
-		if repoError != nil {
-			fmt.Fprintln(os.Stderr, "Error when removing repo", ahbInfo.RepoAlias)
-		}
 		fmt.Fprintln(os.Stderr, "Error installing", ahbInfo.RegionSrv, "or", ahbInfo.RegionSrvAddOn)
 		return err
 	}
 	return nil
 }
 
-func _handlePackageInstall(ahbInfo AHBInfo) error {
-	isRegistered, err := _isRegistered()
+func _getVersionAndArch(module bool) (string, string) {
+	output, _ := RunShellCommand(0, "uname", "-i")
+	arch := strings.Trim(string(output), "\n\t\r")
+	catCommand := "cat /etc/os-release | grep VERSION_ID | tr -d VERSION_ID= | tr -d '\"'"
+	output, _ = RunShellCommand(0, "bash", "-c", catCommand)
+	version := ""
+	if strings.Contains(string(output), "15") {
+		if module {
+			version = output
+		} else {
+			version = "15"
+		}
+	}
+	if strings.Contains(string(output), "12") {
+		version = "12"
+	}
+	return version, arch
+}
+func _getUnrestrictedRepoUrl(ahbRepoUrl string) string {
+	version, arch := _getVersionAndArch(false)
+	return fmt.Sprintf(ahbRepoUrl, version, arch)
+}
+
+func _installUnrestrictedRepoPackages(ahbInfo AHBInfo, repoUrl string, ext *vmextension.VMExtension) error {
+	repoError := _addRepo(ahbInfo.RepoAlias, repoUrl)
+	if repoError == nil {
+		// install cloud-regionsrv-client and addon packages
+		return _installPackages(ahbInfo)
+	}
+	ext.ExtensionEvents.LogErrorEvent(
+		INSTALL_EVENT,
+		fmt.Sprintf(OPERATION_FAILURE_MSG, "Add unrestricted repo", repoError.Error()))
+
+	return repoError
+}
+
+func _removeRepositories() error {
+	repos, err := filepath.Glob("/etc/zypp/repos.d/*.repo")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Error getting repositories from '/etc/zypp/repos.d'")
+		return err
+	}
+	for _, repo := range repos {
+		repoFile, err := os.Open(repo)
+
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return err
+		}
+		scanner := bufio.NewScanner(repoFile)
+
+		for scanner.Scan() {
+			if strings.Contains(scanner.Text(), "baseurl") && (strings.Contains(scanner.Text(), "plugin:/susecloud") ||
+				strings.Contains(scanner.Text(), "plugin:susecloud")) {
+				fmt.Println("Removing repo ", repo)
+				os.Remove(repo)
+			}
+		}
+
+		if err := scanner.Err(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return err
+		}
+	}
+	return nil
+}
+
+func _hasServices() (bool, error) {
+	services, err := filepath.Glob("/etc/zypp/services.d/*.service")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return false, err
+	}
+	return len(services) > 0, nil
+}
+
+func _reactivateServices() error {
+	extensionsOutput, err := RunShellCommand(0, "SUSEConnect", "--list-extensions")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return err
+	}
+	extensionsList := strings.Split(extensionsOutput, "\n")
+	for _, extension := range extensionsList {
+		if strings.Contains(extension, "Deactivate with") {
+			// activate whatever it was active
+			start := strings.Index(string(extension), "SUSEConnect")
+			if start != -1 {
+				command := string(extension)[start:len(extension)]
+				commandList := strings.Split(command, " ")
+				_, err = RunShellCommand(0, commandList[0], commandList[2], commandList[3])
+				if err != nil {
+					fmt.Fprintln(os.Stderr, err)
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func _activatePubCloudModule(ahbInfo AHBInfo) (bool, error) {
+	version, arch := _getVersionAndArch(true)
+	triplet := ahbInfo.ModName + "/" + version + "/" + arch
+	_, addModuleError := RunShellCommand(0, "SUSEConnect", "-p", triplet)
+	if addModuleError != nil {
+		// adding module with SUSEConnect failed,
+		// trying adding repo with zypper
+		repoUrl := fmt.Sprintf(ahbInfo.RepoUrl, version, arch)
+		addRepoError := _addRepo(ahbInfo.RepoAlias, repoUrl)
+		if addRepoError != nil {
+			return false, addRepoError
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+func _handlePackageInstall(ahbInfo AHBInfo, ext *vmextension.VMExtension) error {
+	isRegistered, hasActiveSubscription, err := _getSUSEConnectStatus()
 
 	if err != nil {
 		return err
 	}
 
-	if isRegistered {
-		hasPubCloudMod, distro, arch, errGlob := _hasPubCloudMod(ahbInfo.PublicCloudService)
+	if isRegistered && hasActiveSubscription {
+		// system is registered with an active subscription
+		// check if services are present
+		hasServices, err := _hasServices()
+		if err != nil {
+			return err
+		}
+
+		if !hasServices {
+			err = _reactivateServices()
+			if err != nil {
+				return err
+			}
+		}
+		hasPubCloudMod, errGlob := _hasPubCloudMod(ahbInfo.PublicCloudService)
 		if errGlob != nil {
 			return errGlob
 		}
+		removeRepo := false
 		if !hasPubCloudMod {
-			// add repo
-			repoUrl := fmt.Sprintf(ahbInfo.RepoUrl, distro, arch)
-			triplet := ahbInfo.ModName + "/" + distro + "/" + arch
-			_, addRepoError := RunShellCommand(0, "SUSEConnect", "-p", triplet)
-			if addRepoError != nil {
-				// adding module with SUSEConnect failed,
-				// trying adding repo with zypper
-				addRepoError = _addRepo(ahbInfo.RepoAlias, repoUrl)
-				if addRepoError != nil {
-					return addRepoError
-				}
+			removeRepo, err = _activatePubCloudModule(ahbInfo)
+			if err != nil {
+				return err
 			}
 		}
 		// install cloud-regionsrv-client and addon packages
 		if installError := _installPackages(ahbInfo); installError != nil {
+			ext.ExtensionEvents.LogErrorEvent(
+				INSTALL_EVENT,
+				fmt.Sprintf(OPERATION_FAILURE_MSG, "Install packages", installError.Error()))
 			return installError
 		}
-		// packages installed, remove repo
-		_, err := RunShellCommand(0, "zypper", "removerepo", ahbInfo.RepoAlias)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "Error when removing repo", ahbInfo.RepoAlias)
+		if removeRepo {
+			// packages installed, remove repo
+			_, err = RunShellCommand(0, "zypper", "removerepo", ahbInfo.RepoAlias)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "Error when removing repo", ahbInfo.RepoAlias)
+			}
 		}
 	} else {
-		fmt.Println(
-			"System is not registered. Adding repository and installing packages.",
-		)
-		output, _ := RunShellCommand(0, "uname", "-i")
-		arch := strings.Trim(string(output), "\n\t\r")
-		output, _ = RunShellCommand(0, "cat", "/etc/os-release", "|", "grep", "VERSION_ID")
-		distro := ""
-		if strings.Contains(string(output), "15") {
-			distro = "15"
+		if isRegistered && !hasActiveSubscription {
+			fmt.Println("System is registered but subscription expired. Removing repositories")
+			_removeRepositories()
 		}
-		if strings.Contains(string(output), "12") {
-			distro = "12"
+		if !isRegistered {
+			fmt.Println("System is not registered")
 		}
-		repoUrl := fmt.Sprintf(ahbInfo.RepoUrl, distro, arch)
-		addRepoError := _addRepo(ahbInfo.RepoAlias, repoUrl)
-		if addRepoError != nil {
-			return addRepoError
-		}
-		// install cloud-regionsrv-client and addon packages
-		if installError := _installPackages(ahbInfo); installError != nil {
-			return installError
+		fmt.Println("Adding repository and installing packages")
+		repoUrl := _getUnrestrictedRepoUrl(ahbInfo.RepoUrl)
+		err := _installUnrestrictedRepoPackages(ahbInfo, repoUrl, ext)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Error installing packages from Unrestricted repository")
+			_, repoError := RunShellCommand(0, "zypper", "removerepo", ahbInfo.RepoAlias)
+			if repoError != nil {
+				fmt.Fprintln(os.Stderr, "Error when removing repo", ahbInfo.RepoAlias)
+				return repoError
+			}
+			return err
 		}
 		// packages installed, remove repo
-		_, err := RunShellCommand(0, "zypper", "removerepo", ahbInfo.RepoAlias)
+		_, err = RunShellCommand(0, "zypper", "removerepo", ahbInfo.RepoAlias)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Error when removing repo", ahbInfo.RepoAlias)
 		}
+
 	}
 	return nil
 }
@@ -347,13 +451,12 @@ var installCallbackFunc vmextension.CallbackFunc = func(ext *vmextension.VMExten
 	if registercloudError == nil {
 		if !_checkVersion(ahbInfo) {
 			// need to install the right version
-			handlePackageError := _handlePackageInstall(ahbInfo)
+			handlePackageError := _handlePackageInstall(ahbInfo, ext)
 			if handlePackageError != nil {
-				fmt.Fprintln(os.Stderr, "Extension enable failed. Reason="+handlePackageError.Error())
+				fmt.Fprintln(os.Stderr, "Extension install failed. Reason="+handlePackageError.Error())
 				ext.ExtensionEvents.LogErrorEvent(
 					INSTALL_EVENT,
 					fmt.Sprintf(OPERATION_FAILURE_MSG, INSTALL_EVENT, handlePackageError.Error()))
-
 				return handlePackageError
 			}
 		} else {
@@ -368,9 +471,9 @@ var installCallbackFunc vmextension.CallbackFunc = func(ext *vmextension.VMExten
 			} else {
 				// missing addon package
 				// add addon
-				handlePackageError := _handlePackageInstall(ahbInfo)
+				handlePackageError := _handlePackageInstall(ahbInfo, ext)
 				if handlePackageError != nil {
-					fmt.Fprintln(os.Stderr, "Extension enable failed. Reason="+handlePackageError.Error())
+					fmt.Fprintln(os.Stderr, "Extension install failed. Reason="+handlePackageError.Error())
 					ext.ExtensionEvents.LogErrorEvent(
 						INSTALL_EVENT,
 						fmt.Sprintf(OPERATION_FAILURE_MSG, INSTALL_EVENT, handlePackageError.Error()))
@@ -379,9 +482,9 @@ var installCallbackFunc vmextension.CallbackFunc = func(ext *vmextension.VMExten
 			}
 		}
 	} else {
-		handlePackageError := _handlePackageInstall(ahbInfo)
+		handlePackageError := _handlePackageInstall(ahbInfo, ext)
 		if handlePackageError != nil {
-			fmt.Fprintln(os.Stderr, "Extension enable failed. Reason="+handlePackageError.Error())
+			fmt.Fprintln(os.Stderr, "Extension install failed. Reason="+handlePackageError.Error())
 			ext.ExtensionEvents.LogErrorEvent(
 				INSTALL_EVENT,
 				fmt.Sprintf(OPERATION_FAILURE_MSG, INSTALL_EVENT, handlePackageError.Error()))
