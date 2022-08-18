@@ -58,18 +58,6 @@ const (
 	OPERATION_COMPLETION_MSG = "AHBForSLES extension %s completed. Result=Success"
 )
 
-const (
-	INSTALL_EVENT            = "Install"
-	ENABLE_EVENT             = "Enable"
-	DISABLE_EVENT            = "Disable"
-	UNINSTALL_EVENT          = "Uninstall"
-	UPDATE_EVENT             = "Update"
-	INITIALIZATION_EVENT     = "Initialization"
-	OPERATION_START_MSG      = "AHBForSLES extension %s started..."
-	OPERATION_FAILURE_MSG    = "AHBForSLES extension %s finished. Result=Failure; Reason=%v"
-	OPERATION_COMPLETION_MSG = "AHBForSLES extension %s completed. Result=Success"
-)
-
 type AHBInfo struct {
 	PublicCloudService     string
 	RegisterCloudGuestPath string
