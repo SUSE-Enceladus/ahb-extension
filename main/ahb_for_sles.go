@@ -28,6 +28,8 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -109,24 +111,77 @@ func parseCfg(filename string) (map[string]map[string]string, error) {
 	return ini, nil
 }
 
-func _getSUSEConnectStatus() (bool, bool, error) {
-	commandOutput, error := RunShellCommand(0, "SUSEConnect", "-s")
-	if error != nil {
-		fmt.Fprintln(os.Stderr, error)
-		return false, false, error
+func _getUsernameAndPassword() (string, string) {
+	sccCredentialsFile, err := os.Open("/etc/zypp/credentials.d/SCCcredentials")
+	username := ""
+	pass := ""
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return username, pass
 	}
-	var suseConnectStatus []map[string]interface{}
-	json.Unmarshal([]byte(commandOutput), &suseConnectStatus)
-	subscriptionStatus := fmt.Sprintf("%v", suseConnectStatus[0]["subscription_status"])
-	status := fmt.Sprintf("%v", suseConnectStatus[0]["status"])
-	if strings.ToLower(status) == "registered" && strings.ToLower(subscriptionStatus) == "active" {
-		return true, true, nil
-	} else {
-		if strings.ToLower(status) == "registered" {
-			return true, false, nil
+	scanner := bufio.NewScanner(sccCredentialsFile)
+	for scanner.Scan() {
+		line := scanner.Text()
+		start := strings.Index(string(line), "=") + 1
+		if start != -1 {
+			if strings.Contains(line, "user") {
+				username = string(line)[start:len(line)]
+			}
+			if strings.Contains(line, "pass") {
+				pass = string(line)[start:len(line)]
+			}
+		}
+		if username != "" && pass != "" {
+			break
 		}
 	}
-	return false, false, nil
+	return username, pass
+}
+
+func _getSubscriptionStatus() (bool, error) {
+	active := false
+	sccConnectUrl := "https://scc.suse.com/connect"
+	URL := sccConnectUrl + "/systems/subscriptions"
+	req, err := http.NewRequest("GET", URL, nil)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return active, err
+	}
+	req.Header.Add("accept", "application/json")
+	username, pass := _getUsernameAndPassword()
+	req.SetBasicAuth(username, pass)
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return active, err
+	}
+	bodyText, err := ioutil.ReadAll(resp.Body)
+	var suseConnectSubscriptions []map[string]interface{}
+	json.Unmarshal([]byte(bodyText), &suseConnectSubscriptions)
+	status := fmt.Sprintf("%v", suseConnectSubscriptions[0]["status"])
+	if strings.ToLower(status) == "active" {
+		active = true
+	}
+	return active, nil
+}
+
+func _getSUSEConnectStatus() (bool, bool, error) {
+	commandOutput, error := RunShellCommand(0, "SUSEConnect", "-s")
+	registered := false
+	active := false
+	if error != nil {
+		fmt.Fprintln(os.Stderr, error)
+	} else {
+		var suseConnectStatus []map[string]interface{}
+		json.Unmarshal([]byte(commandOutput), &suseConnectStatus)
+		status := fmt.Sprintf("%v", suseConnectStatus[0]["status"])
+		if strings.ToLower(status) == "registered" {
+			registered = true
+			active, error = _getSubscriptionStatus()
+		}
+	}
+	return registered, active, error
 }
 
 func _hasPubCloudMod(pubCloudService string) (bool, error) {
