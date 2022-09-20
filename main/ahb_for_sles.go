@@ -610,6 +610,11 @@ var getInitializationInfoFuncToCall = vmextension.GetInitializationInfo
 var logger = log.NewSyncLogger(log.NewLogfmtLogger(os.Stdout))
 
 func main() {
+	if !isSupportedOS() {
+		errorCode := 51
+		fmt.Fprintln(os.Stderr, "Error: code", errorCode, "- Unsupported OS")
+		os.Exit(errorCode)
+	}
 	err := getExtensionAndRun()
 	if err != nil {
 		os.Exit(exithelper.EnvironmentError)
@@ -665,4 +670,10 @@ func RunShellCommand(timeout time.Duration, name string, args ...string) (string
 	}
 
 	return outb.String(), nil
+}
+
+func isSupportedOS() bool {
+	catCommand := "cat /etc/os-release | grep ^NAME="
+	output, _ := RunShellCommand(0, "bash", "-c", catCommand)
+	return strings.Contains(strings.ToLower(string(output)), "sles")
 }
