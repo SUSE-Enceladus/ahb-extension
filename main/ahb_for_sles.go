@@ -675,5 +675,15 @@ func RunShellCommand(timeout time.Duration, name string, args ...string) (string
 func isSupportedOS() bool {
 	catCommand := "cat /etc/os-release | grep ^NAME="
 	output, _ := RunShellCommand(0, "bash", "-c", catCommand)
-	return strings.Contains(strings.ToLower(string(output)), "sles")
+	output = strings.Split(output, "=")[1]
+	output = strings.Trim(string(output), "\n\t\r")
+	output = output[1 : len(output)-1] // remove quotes
+	rpmCommand := "rpm -q %v-release --queryformat \"%v\""
+	if strings.Contains(output, "_") {
+		rpmCommand = fmt.Sprintf(rpmCommand, output, "%10{VENDOR}")
+	} else {
+		rpmCommand = fmt.Sprintf(rpmCommand, strings.ToLower(output), "%10{VENDOR}")
+	}
+	output, _ = RunShellCommand(0, "bash", "-c", rpmCommand)
+	return strings.Contains(strings.ToLower(string(output)), "www.suse.com")
 }
