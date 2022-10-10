@@ -610,6 +610,11 @@ var getInitializationInfoFuncToCall = vmextension.GetInitializationInfo
 var logger = log.NewSyncLogger(log.NewLogfmtLogger(os.Stdout))
 
 func main() {
+	if !isSupportedOS() {
+		errorCode := 51
+		fmt.Fprintln(os.Stderr, "Error: code", errorCode, "- Unsupported OS")
+		os.Exit(errorCode)
+	}
 	err := getExtensionAndRun()
 	if err != nil {
 		os.Exit(exithelper.EnvironmentError)
@@ -665,4 +670,20 @@ func RunShellCommand(timeout time.Duration, name string, args ...string) (string
 	}
 
 	return outb.String(), nil
+}
+
+func isSupportedOS() bool {
+	catCommand := "cat /etc/os-release | grep ^NAME="
+	output, _ := RunShellCommand(0, "bash", "-c", catCommand)
+	output = strings.Split(output, "=")[1]
+	output = strings.Trim(string(output), "\n\t\r")
+	output = output[1 : len(output)-1] // remove quotes
+	rpmCommand := "rpm -q %v-release --queryformat \"%v\""
+	if strings.Contains(output, "_") {
+		rpmCommand = fmt.Sprintf(rpmCommand, output, "%{VENDOR}")
+	} else {
+		rpmCommand = fmt.Sprintf(rpmCommand, strings.ToLower(output), "%{VENDOR}")
+	}
+	output, _ = RunShellCommand(0, "bash", "-c", rpmCommand)
+	return strings.Contains(strings.ToLower(string(output)), "www.suse.com")
 }
