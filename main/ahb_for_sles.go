@@ -680,9 +680,9 @@ func isSupportedOS() bool {
 	output = output[1 : len(output)-1] // remove quotes
 	rpmCommand := "rpm -q %v-release --queryformat \"%v\""
 	if strings.Contains(output, "_") {
-		rpmCommand = fmt.Sprintf(rpmCommand, output, "%10{VENDOR}")
+		rpmCommand = fmt.Sprintf(rpmCommand, output, "%{VENDOR}")
 	} else {
-		rpmCommand = fmt.Sprintf(rpmCommand, strings.ToLower(output), "%10{VENDOR}")
+		rpmCommand = fmt.Sprintf(rpmCommand, strings.ToLower(output), "%{VENDOR}")
 	}
 	output, _ = RunShellCommand(0, "bash", "-c", rpmCommand)
 	return strings.Contains(strings.ToLower(string(output)), "www.suse.com")
